@@ -16,7 +16,7 @@
     s3: bucket={{ bucket_name }} object={{ s3_obj }} dest={{ get_path }} mode=get s3_url={{ s3_url }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }}
 
   - name: Download file with curl
-    shell: curl "{{ file_url }}" -o {{ tmp_dest }}
+    shell: curl "{{ file_url['url'] }}" -o {{ tmp_dest }}
 
 # Doesnt support the right signature version
 #  - name: Delete a bucket and all contents
