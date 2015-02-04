@@ -1,0 +1,25 @@
+
+- hosts: localhost
+  vars:
+  tasks:
+  - name: Create an empty bucket
+    s3: bucket={{ bucket_name }} mode=create s3_url={{ s3_url }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }}
+
+  - name:  PUT/upload file
+    s3: bucket={{ bucket_name }} object={{ s3_obj }} src={{ file_to_upload }}  mode=put s3_url={{ s3_url }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }}
+
+  - name: Get file URL
+    s3: bucket={{ bucket_name }} object={{ s3_obj }} mode=geturl s3_url={{ s3_url }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }}
+    register: file_url
+
+  - name: Simple GET operation
+    s3: bucket={{ bucket_name }} object={{ s3_obj }} dest={{ get_path }} mode=get s3_url={{ s3_url }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }}
+
+  - name: Download file with curl
+    shell: curl "{{ file_url }}" -o {{ tmp_dest }}
+
+# Doesnt support the right signature version
+#  - name: Delete a bucket and all contents
+#    s3: bucket={{ bucket_name }} mode=delete s3_url={{ s3_url }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }}
+#    ignore_errors: true
+
