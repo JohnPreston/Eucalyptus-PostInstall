@@ -1,0 +1,39 @@
+
+- hosts: localhost
+  vars:
+  - aws_akey:
+  - aws_skey:
+  - ec2_url:
+  - zone1:
+  - zone2:
+  - vol_size:
+
+  tasks:
+  - name: create volume
+    ec2_vol: aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }} volume_size={{ vol_size }} zone={{ zone1 }}
+    register: volume
+
+  - name: delete volume
+    ec2_vol: id={{ volume['volume_id'] }} state=absent
+
+  - name: create volume
+    ec2_vol: aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }} volume_size={{ vol_size }} zone={{ zone1 }}
+    register: volume
+
+  - name: create snapshot
+    ec2_snapshot: volume_id={{ volume['volume_id'] }} wait=yes
+    register: snap
+
+  - name: create volume from snapshot
+    ec2_vol: aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }} zone={{ zone1 }} snapshot={{ snap['snapshot_id'] }} volume_size={{ snap['volume_size'] }}
+    register: newvolume
+
+  - name: delete new volume
+    ec2_vol: id={{ newvolume['volume_id'] }} state=absent
+
+# available in ansible 1.9 only
+#  - name: delete snapshot
+#    ec2_snapshot: snapshot_id={{ snap['snapshot_id'] }} state=absent
+
+  - name: shell snapshot deletion
+    shell: euca-delete-snapshot {{ snap['snapshot_id'] }} -I {{ aws_akey }} -S {{ aws_skey }} -U {{ ec2_url }}
