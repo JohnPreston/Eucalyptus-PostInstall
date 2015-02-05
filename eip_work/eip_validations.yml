@@ -1,0 +1,10 @@
+
+- hosts: localhost
+  tasks:
+  - name: Allocate an Elastic IP
+    action: ec2_eip aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
+    register: eip
+
+  - name: Release an Elastic IP
+    ec2_eip: public_ip={{ eip.public_ip }} state=absent  aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
+
