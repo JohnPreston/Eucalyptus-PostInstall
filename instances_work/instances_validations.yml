@@ -1,5 +1,6 @@
 
-- hosts: localhost
+- hosts:
+  - localhost
   vars:
   - run_timeout: 300
   - ssh_timeout: 300
@@ -44,9 +45,24 @@
       timeout={{ ssh_timeout }}
       state=started
 
-  - name: Check user and meta data via SSH
-    shell: ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i {{ private_keys_path + 'instanceA_key.pem' }} {{ instanceA.instances[0].public_ip }} curl 169.254.169.254/latest/meta-data/public-ipv4 
+  - name: define new hosts
+    add_host: hostname={{ instanceA.instances[0].public_ip }} groupname=newinstances  ansible_ssh_private_key_file="{{ private_keys_path + 'instanceA_key.pem' }}"
 
+- hosts:
+  - newinstances
+
+  tasks:
+  - name: Check user and meta data via SSH
+    shell: curl {{ item }}
+    with_items:
+    - 169.254.169.254/latest/meta-data/instance-id
+    - 169.254.169.254/latest/meta-data/public-ipv4
+    - 169.254.169.254/latest/meta-data/local-ipv4
+    - 169.254.169.254/latest/meta-data/public-hostname
+
+- hosts: localhost
+
+  tasks:
   - name: Terminate InstanceA
     ec2: instance_ids={{ item }} state=absent wait=yes wait_timeout={{ run_timeout }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }} 
     with_items: "{{ instanceA['instance_ids'] }}"
