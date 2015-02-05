@@ -1,0 +1,94 @@
+
+- hosts: localhost
+  tasks:
+
+  - name: create a groupA
+    ec2_group:
+      name: groupA
+      description: Group A
+      aws_secret_key: "{{ aws_skey }}"
+      aws_access_key: "{{ aws_akey }}"
+      ec2_url: "{{ ec2_url }}"
+      purge_rules: false
+      rules:
+        - proto: tcp
+          from_port: 22
+          to_port: 22
+          cidr_ip: "{{ ssh_cidr }}"
+
+
+  - name: Add group A rules
+    ec2_group:
+      name: groupA
+      description: Group A
+      aws_secret_key: "{{ aws_skey }}"
+      aws_access_key: "{{ aws_akey }}"
+      ec2_url: "{{ ec2_url }}"
+      purge_rules: false
+      rules:
+        - proto: tcp
+          from_port: 80
+          to_port: 80
+          cidr_ip: "{{ http_cidr }}"
+
+  - name: create a groupB
+    ec2_group:
+      name: groupB
+      description: Group B
+      aws_secret_key: "{{ aws_skey }}"
+      aws_access_key: "{{ aws_akey }}"
+      ec2_url: "{{ ec2_url }}"
+      purge_rules: false
+      rules:
+
+
+  - name: GroupB authorize GroupA
+    ec2_group:
+      name: groupB
+      description: Group B
+      aws_secret_key: "{{ aws_skey }}"
+      aws_access_key: "{{ aws_akey }}"
+      ec2_url: "{{ ec2_url }}"
+      purge_rules: false
+      rules:
+        - proto: tcp
+          from_port: 80
+          to_port: 80
+          group_name: groupA
+
+  - name: Remove groupA rules
+    ec2_group:
+      name: groupA
+      description: Group A
+      aws_secret_key: "{{ aws_skey }}"
+      aws_access_key: "{{ aws_akey }}"
+      ec2_url: "{{ ec2_url }}"
+      purge_rules: true
+      rules:
+        - proto: tcp
+          from_port: 22
+          to_port: 22
+          cidr_ip: "{{ ssh_cidr }}"
+
+
+  - name: Remove groupB
+    ec2_group:
+      name: groupB
+      description: Group B
+      aws_secret_key: "{{ aws_skey }}"
+      aws_access_key: "{{ aws_akey }}"
+      ec2_url: "{{ ec2_url }}"
+      purge_rules: true
+      state: absent
+      rules:
+
+  - name: Remove groupA
+    ec2_group:
+      name: groupA
+      description: Group A
+      aws_secret_key: "{{ aws_skey }}"
+      aws_access_key: "{{ aws_akey }}"
+      ec2_url: "{{ ec2_url }}"
+      purge_rules: true
+      state: absent
+      rules:
