@@ -1,0 +1,53 @@
+
+- hosts: localhost
+  vars:
+  - run_timeout: 300
+  - ssh_timeout: 300
+  - ssh_delay: 30
+  - instance_type: m1.large
+  - ssh_cidr: 0.0.0.0/0
+  tasks:
+  - name: Create a securiy group GroupA for InstanceA
+    ec2_group:
+      name: groupA
+      description: Group A
+      aws_secret_key: "{{ aws_skey }}"
+      aws_access_key: "{{ aws_akey }}"
+      ec2_url: "{{ ec2_url }}"
+      purge_rules: true
+      rules:
+        - proto: tcp
+          from_port: 22
+          to_port: 22
+          cidr_ip: "{{ ssh_cidr }}"
+
+  - name: Delete a potential existing SSH keypair
+    ec2_key: name=instanceA state=absent
+    ignore_errors: true
+
+  - name: Create a SSH keypair
+    ec2_key: name=instanceA
+    register: instanceA_key
+
+  - name: Creates the keypair_file
+    shell: echo '{{ instanceA_key['key']['private_key'] }}' > /tmp/instanceA_key.pem && chmod 600 /tmp/instanceA_key.pem
+
+  - name: Create a new instance A
+    ec2: group=groupA image={{ emi_id }} instance_type={{ instance_type }} state=present wait=yes wait_timeout={{ run_timeout }} zone={{ zone }} key_name={{ instanceA_key['key']['name'] }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }} 
+    register: instanceA
+
+  - name: Wait for SSH to be enabled
+    local_action:
+      wait_for host={{ instanceA.instances[0].public_ip }}
+      port=22
+      delay={{ ssh_delay }}
+      timeout={{ ssh_timeout }}
+      state=started
+
+  - name: Check user and meta data via SSH
+    shell: ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i /tmp/instanceA_key.pem {{ instanceA.instances[0].public_ip }} curl 169.254.169.254/latest/meta-data/public-ipv4 
+
+  - name: Terminate InstanceA
+    ec2: instance_ids={{ item }} state=absent wait=yes wait_timeout={{ run_timeout }}
+    with_items: "{{ instanceA['instance_ids'] }}"
+
