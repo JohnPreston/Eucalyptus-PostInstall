@@ -7,6 +7,7 @@
   - ssh_delay: 30
   - instance_type: m1.large
   - ssh_cidr: 0.0.0.0/0
+  - ssh_username: root
   tasks:
   - name: Create a securiy group GroupA for InstanceA
     ec2_group:
@@ -46,11 +47,10 @@
       state=started
 
   - name: define new hosts
-    add_host: hostname={{ instanceA.instances[0].public_ip }} groupname=newinstances  ansible_ssh_private_key_file="{{ private_keys_path + 'instanceA_key.pem' }}" ansible_ssh_user=root
+    add_host: hostname={{ instanceA.instances[0].public_ip }} groupname=newinstances  ansible_ssh_private_key_file="{{ private_keys_path + 'instanceA_key.pem' }}" ansible_ssh_user={{ ssh_username }}
 
 - hosts:
   - newinstances
-
   tasks:
   - name: Check user and meta data via SSH
     shell: curl {{ item }}
