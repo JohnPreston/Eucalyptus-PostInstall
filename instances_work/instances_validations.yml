@@ -22,11 +22,11 @@
           cidr_ip: "{{ ssh_cidr }}"
 
   - name: Delete a potential existing SSH keypair
-    ec2_key: name=instanceA state=absent
+    ec2_key: name=instanceA state=absent aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }} 
     ignore_errors: true
 
   - name: Create a SSH keypair
-    ec2_key: name=instanceA
+    ec2_key: name=instanceA aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }} 
     register: instanceA_key
 
   - name: Creates the keypair_file
@@ -48,6 +48,6 @@
     shell: ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i /tmp/instanceA_key.pem {{ instanceA.instances[0].public_ip }} curl 169.254.169.254/latest/meta-data/public-ipv4 
 
   - name: Terminate InstanceA
-    ec2: instance_ids={{ item }} state=absent wait=yes wait_timeout={{ run_timeout }}
+    ec2: instance_ids={{ item }} state=absent wait=yes wait_timeout={{ run_timeout }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }} 
     with_items: "{{ instanceA['instance_ids'] }}"
 
