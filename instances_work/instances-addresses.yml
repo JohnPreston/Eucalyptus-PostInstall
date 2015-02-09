@@ -29,19 +29,9 @@
           from_port: 22
           to_port: 22
           cidr_ip: "{{ ssh_cidr }}"
-
-  - name: Create a securiy group GroupB for InstanceB
-    ec2_group:
-      name: "groupB-{{ date }}"
-      description: Group B - {{ date }}
-      aws_secret_key: "{{ aws_skey }}"
-      aws_access_key: "{{ aws_akey }}"
-      ec2_url: "{{ ec2_url }}"
-      purge_rules: true
-      rules:
-        - proto: tcp
-          from_port: 22
-          to_port: 22
+        - proto: icmp
+          from_port: -1
+          to_port: -1
           cidr_ip: "{{ ssh_cidr }}"
 
 
@@ -60,16 +50,11 @@
     ec2: group=groupA-{{ date }} image={{ emi_id }} instance_type={{ instance_type }} state=present wait=yes wait_timeout={{ run_timeout }} zone={{ zone }} key_name={{ instance_key['key']['name'] }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
     register: instanceA
 
-  - name: Create a new instance B
-    ec2: group=groupB-{{ date }} image={{ emi_id }} instance_type={{ instance_type }} state=present wait=yes wait_timeout={{ run_timeout }} zone={{ zone }} key_name={{ instance_key['key']['name'] }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }} 
-    register: instanceB
-
 
   - name: Debug instances
     debug: msg={{ item.instances[0] }}
     with_items:
     - "{{ instanceA }}"
-    - "{{ instanceB }}"
 
   - name: Wait for SSH to be enabled
     local_action:
@@ -80,74 +65,54 @@
       state=started
     with_items:
     - "{{ instanceA }}"
-    - "{{ instanceB }}"
 
   - name: define new hosts
     add_host: hostname={{ item.instances[0].public_ip }} groupname=newinstancesA  ansible_ssh_private_key_file="{{ keypair_path }}" ansible_ssh_user={{ ssh_username }}
     with_items:
     - "{{ instanceA }}"
 
-  - name: define new hosts
-    add_host: hostname={{ item.instances[0].public_ip }} groupname=newinstancesB  ansible_ssh_private_key_file="{{ keypair_path }}" ansible_ssh_user={{ ssh_username }}
-    with_items:
-    - "{{ instanceB }}"
-
-  - name: Group A authorize ICMP from Group B
-    ec2_group:
-      name: "groupA-{{ date }}"
-      description: Group B - {{ date }}
-      aws_secret_key: "{{ aws_skey }}"
-      aws_access_key: "{{ aws_akey }}"
-      ec2_url: "{{ ec2_url }}"
-      purge_rules: false
-      rules:
-        - proto: icmp
-          from_port: -1
-          to_port: -1
-          group_name: "groupB-{{ date }}"
-
 - hosts:
   - newinstancesA
-  - newinstancesB
   tasks:
   - name: Gather data
     setup:
-
-  - name: Debug hostvars
-    debug: msg="{{ item }}"
-    with_items:
-    - "{{ groups['newinstancesA'] }}"
-
-- hosts:
-  - newinstancesA
-  - newinstancesB
-  tasks:
   - name: Gather instances facts
     action: ec2_facts
 
 - hosts:
-  - newinstancesB
+  - localhost
   tasks:
-  - name: ICMP from InstanceB to instanceA | PUBLIC IP
-    shell: ping -c 5 {{ hostvars[item]['ansible_ec2_public_ipv4'] }} || exit 1
-    with_items:
-    - "{{ groups['newinstancesA'] }}"
-    ignore_errors: true
+  - name: Allocate an Elastic IP
+    action: ec2_eip aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
+    register: eip
 
-  - name: ICMP from InstanceB to instanceA | PRIVATE IP
-    shell: ping -c 5 {{ hostvars[item]['ansible_ec2_local_ipv4'] }}
+  - name: Associate EIP to InstanceA
+    ec2_eip: ip="{{ eip.public_ip }}" instance_id="{{ item.instances[0].id }}"
     with_items:
-    - "{{ groups['newinstancesA'] }}"
-    ignore_errors: true
+    - "{{ instanceA }}"
+
+  - name: Checking access to instance via EIP
+    local_action:
+      wait_for host={{ item.public_ip }}
+      port=22
+      delay={{ ssh_delay }}
+      timeout={{ ssh_timeout }}
+      state=started
+    with_items:
+    - "{{ eip }}"
+
+  - name: Dissociate EIP from Instance
+    action: ec2_eip ip="{{ eip.public_ip }}" instance_id="{{ instanceA.instances[0].id }}" state=absent
+
+  - name: Release EIP 
+    ec2_eip: ip="{{ eip.public_ip }}" state=absent
 
 - hosts: localhost
-
   tasks:
   - name: Terminate instances
     ec2: instance_ids={{ item }} state=absent wait=yes wait_timeout={{ run_timeout }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }} 
     with_items:
     - "{{ instanceA['instance_ids'] }}"
-    - "{{ instanceB['instance_ids'] }}"
 
   - name: Delete security groups
     ec2_group:
@@ -160,4 +125,4 @@
       state: absent
     with_items:
     - "groupA-{{ date }}"
-    - "groupB-{{ date }}"
+
