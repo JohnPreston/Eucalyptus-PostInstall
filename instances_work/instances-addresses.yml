@@ -87,7 +87,7 @@
     register: eip
 
   - name: Associate EIP to InstanceA
-    ec2_eip: ip="{{ eip.public_ip }}" instance_id="{{ item.instances[0].id }}"
+    ec2_eip: ip="{{ eip.public_ip }}" instance_id="{{ item.instances[0].id }}" aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
     with_items:
     - "{{ instanceA }}"
 
@@ -102,7 +102,7 @@
     - "{{ eip }}"
 
   - name: Dissociate EIP from Instance
-    action: ec2_eip ip="{{ eip.public_ip }}" instance_id="{{ instanceA.instances[0].id }}" state=absent
+    action: ec2_eip ip="{{ eip.public_ip }}" instance_id="{{ instanceA.instances[0].id }}" state=absent aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
 
   - name: Release EIP 
     ec2_eip: ip="{{ eip.public_ip }}" state=absent
