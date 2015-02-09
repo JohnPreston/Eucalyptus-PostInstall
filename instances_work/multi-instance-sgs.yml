@@ -122,25 +122,20 @@
   - newinstancesA
   - newinstancesB
   tasks:
-  - name: Check user and meta data via SSH
-    shell: curl {{ item }}
-    with_items:
-    - 169.254.169.254/latest/meta-data/instance-id
-    - 169.254.169.254/latest/meta-data/public-ipv4
-    - 169.254.169.254/latest/meta-data/local-ipv4
-    - 169.254.169.254/latest/meta-data/public-hostname
+  - name: Gather instances facts
+    action: ec2_facts
 
 - hosts:
   - newinstancesB
   tasks:
   - name: ICMP from InstanceB to instanceA | PUBLIC IP
-    shell: ping -c 5 {{ item }} || exit 1
+    shell: ping -c 5 {{ hostvars[item]['ansible_ec2_public_ipv4'] }} || exit 1
     with_items:
     - "{{ groups['newinstancesA'] }}"
     ignore_errors: true
 
   - name: ICMP from InstanceB to instanceA | PRIVATE IP
-    shell: ping -c 5 {{ hostvars[item]['ansible_eth0']['ipv4']['address'] }} || exit 1
+    shell: ping -c 5 {{ hostvars[item]['ansible_ec2_local_ipv4'] }}
     with_items:
     - "{{ groups['newinstancesA'] }}"
     ignore_errors: true
