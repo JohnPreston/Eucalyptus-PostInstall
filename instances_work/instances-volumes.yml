@@ -142,8 +142,8 @@
   - name: Check Sums
     shell: echo "{{ item }}"
     with_items:
-    - file_orig_sum
-    - file_snap_sum
+    - "{{ file_orig_sum }}"
+    - "{{ file_snap_sum }}"
 
 - hosts: localhost
   tasks:
