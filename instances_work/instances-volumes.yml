@@ -1,0 +1,187 @@
+
+- hosts:
+  - localhost
+  vars:
+  - run_timeout: 300
+  - ssh_timeout: 300
+  - ssh_delay: 30
+  - instance_type: m1.large
+  - ssh_cidr: 0.0.0.0/0
+  - ssh_username: root
+  - date:
+  - keypair_name: keypair-{{ date }}
+  - keypair_path: "{{ private_keys_path }}{{ keypair_name }}"
+  - vol_size: 1
+  tasks:
+
+  - name: Debug keypair path
+    debug: msg={{ keypair_path }}
+
+  - name: Create a securiy group GroupA for InstanceA
+    ec2_group:
+      name: "groupA-{{ date }}"
+      description: Group A - {{ date }}
+      aws_secret_key: "{{ aws_skey }}"
+      aws_access_key: "{{ aws_akey }}"
+      ec2_url: "{{ ec2_url }}"
+      purge_rules: true
+      rules:
+        - proto: tcp
+          from_port: 22
+          to_port: 22
+          cidr_ip: "{{ ssh_cidr }}"
+        - proto: icmp
+          from_port: -1
+          to_port: -1
+          cidr_ip: "{{ ssh_cidr }}"
+
+
+  - name: Delete a potential existing SSH keypair
+    ec2_key: name={{ keypair_name }} state=absent aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }} 
+    ignore_errors: true
+
+  - name: Create a SSH keypair
+    ec2_key: name={{ keypair_name }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
+    register: instance_key
+
+  - name: Creates the keypair_file
+    shell: echo '{{ instance_key['key']['private_key'] }}' > {{ keypair_path }} && chmod 600 {{ keypair_path }}
+
+  - name: Create a new instance A
+    ec2: group=groupA-{{ date }} image={{ emi_id }} instance_type={{ instance_type }} state=present wait=yes wait_timeout={{ run_timeout }} zone={{ zone }} key_name={{ instance_key['key']['name'] }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
+    register: instanceA
+
+
+  - name: Debug instances
+    debug: msg={{ item.instances[0] }}
+    with_items:
+    - "{{ instanceA }}"
+
+  - name: Wait for SSH to be enabled
+    local_action:
+      wait_for host={{ item.instances[0].public_ip }}
+      port=22
+      delay={{ ssh_delay }}
+      timeout={{ ssh_timeout }}
+      state=started
+    with_items:
+    - "{{ instanceA }}"
+
+  - name: define new hosts
+    add_host: hostname={{ item.instances[0].public_ip }} groupname=newinstancesA  ansible_ssh_private_key_file="{{ keypair_path }}" ansible_ssh_user={{ ssh_username }}
+    with_items:
+    - "{{ instanceA }}"
+
+  - name: create volume
+    ec2_vol: volume_size={{ vol_size }} zone={{ zone }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
+    register: volume
+
+  - name: Attach volume to instance A
+    ec2_vol: id="{{ volume.volume_id }}" instance="{{ instanceA.instances[0].id }}" device_name=/dev/sdz zone={{ zone }} state=present aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
+
+- hosts:
+  - newinstancesA
+  tasks:
+  - name: Gather data
+    setup:
+  - name: Gather instances facts
+    action: ec2_facts
+  - name: Format disk
+    filesystem: dev=/dev/vdc fstype=ext4 opts="-m 0"
+  - name: Mount disk=
+    mount: name=/var/tmp src=/dev/vdc fstype=ext4 state=mounted
+  - name: Do IOps
+    shell: timeout 5 cat /dev/urandom > /var/tmp/file.tmp
+    ignore_errors: true
+  - name: MD5 Sum file.tmp
+    shell: md5sum /var/tmp/file.tmp
+    register: file_orig_sum
+  - name: Umount the volume
+    mount: name=/var/tmp src=/dev/vdc state=unmounted fstype=ext4
+
+- hosts:
+  - localhost
+  tasks:
+  # - name: Detach volume to instance A
+  #   ec2_vol:
+  #     id: "{{ volume.volume_id }}"
+  #     instance: "{{ instanceA.instances[0].id }}"
+  #     state: absent
+  #     aws_access_key: "{{ aws_akey }}"
+  #     aws_secret_key: "{{ aws_skey }}"
+  #     ec2_url: "{{ ec2_url }}"
+
+  - name: Detach volume | using euca2ools
+    shell: euca-detach-volume "{{ volume.volume_id }}" -i "{{ instanceA.instances[0].id }}" -U "{{ ec2_url }}" -I "{{ aws_akey }}" -S "{{ aws_skey }}"
+
+  - name: create snapshot
+    ec2_snapshot: volume_id={{ volume['volume_id'] }} wait=yes aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
+    register: snap
+
+  - name: create volume from snapshot
+    ec2_vol: zone={{ zone }} snapshot={{ snap['snapshot_id'] }} volume_size={{ snap['volume_size'] }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
+    register: newvolume
+
+  - name: Attach new volume to instance A
+    ec2_vol: id="{{ newvolume.volume_id }}" instance="{{ instanceA.instances[0].id }}" device_name=/dev/sdz zone={{ zone }} state=present aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
+
+- hosts:
+  - newinstancesA
+  tasks:
+  - name: Gather data
+    setup:
+  - name: Gather instances facts
+    action: ec2_facts
+  - name: Mount disk
+    mount: name=/var/tmp src=/dev/vdc fstype=ext4 state=mounted
+    ignore_errors: true
+  - name: MD5 Sum file.tmp
+    shell: md5sum /var/tmp/file.tmp
+    register: file_snap_sum
+
+  - name: Check Sums
+    shell: echo "{{ item }}"
+    with_items:
+    - file_orig_sum
+    - file_snap_sum
+
+- hosts: localhost
+  tasks:
+  - name: Terminate instances
+    ec2: instance_ids={{ item }} state=absent wait=yes wait_timeout={{ run_timeout }} aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }} 
+    with_items:
+    - "{{ instanceA['instance_ids'] }}"
+
+  - name: Delete security groups
+    ec2_group:
+      name: "{{ item }}"
+      description: Group B - {{ date }}
+      aws_secret_key: "{{ aws_skey }}"
+      aws_access_key: "{{ aws_akey }}"
+      ec2_url: "{{ ec2_url }}"
+      purge_rules: true
+      state: absent
+    with_items:
+    - "groupA-{{ date }}"
+
+  # - name: Delete the volumes
+  #   ec2_vol: id="{{ item.volume_id }}" aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
+  #   with_items:
+  #   - "{{ volume }}"
+  #   - "{{ newvolume }}"
+
+  # - name: Delete snapshot
+  #   ec2_snapshot: snapshot={{ item.snapshot_id }} state=absent aws_access_key={{ aws_akey }} aws_secret_key={{ aws_skey }} ec2_url={{ ec2_url }}
+  #   with_items:
+  #   - "{{ snap }}"
+
+  - name: Delete the volumes | using euca2ools
+    shell: euca-delete-volume "{{ item.volume_id }}" -I {{ aws_akey }} -S {{ aws_skey }} -U {{ ec2_url }}
+    with_items:
+    - "{{ volume }}"
+    - "{{ newvolume }}"
+
+  - name: Delete snapshot | using euca2ools
+    shell: euca-delete-snapshot {{ item.snapshot_id }} -I {{ aws_akey }} -S {{ aws_skey }} -U {{ ec2_url }}
+    with_items:
+    - "{{ snap }}"
